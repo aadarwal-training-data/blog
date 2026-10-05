@@ -1,0 +1,19 @@
+project:
+  type: website
+
+website:
+  title: "Aadarsh Agarwal"
+  description: "Technical notes by Aadarsh Agarwal."
+  site-url: https://aadarwal-training-data.github.io/blog/
+  repo-url: https://github.com/aadarwal-training-data/blog
+  navbar:
+    title: "blog"
+    right:
+      - text: "aadarwal.com"
+        href: https://www.aadarwal.com
+
+format:
+  html:
+    theme: [default, theme.scss]
+    html-math-method: katex
+    smooth-scroll: true

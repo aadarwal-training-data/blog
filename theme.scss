@@ -1,0 +1,48 @@
+/*-- scss:defaults --*/
+
+// Matches aadarwal.com: cream page, black text, UChicago maroon links.
+$body-bg: #fffffa;
+$body-color: #111111;
+$link-color: #800000;
+
+$font-family-sans-serif: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
+$font-family-monospace: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+$navbar-bg: #fffffa;
+$navbar-fg: #111111;
+$navbar-hl: #800000;
+$footer-bg: #fffffa;
+
+$code-color: #111111;
+$code-block-bg: #f5f4ea;
+$border-color: #e4e2d4;
+$table-border-color: #e4e2d4;
+
+/*-- scss:rules --*/
+
+.navbar {
+  border-bottom: 1px solid $border-color;
+}
+
+.navbar-title {
+  font-weight: 600;
+}
+
+h1.title,
+h2,
+h3 {
+  font-weight: 600;
+}
+
+.quarto-title .subtitle {
+  color: #555;
+}
+
+a {
+  text-underline-offset: 2px;
+}
+
+blockquote {
+  color: #333;
+  border-left-color: $border-color;
+}
