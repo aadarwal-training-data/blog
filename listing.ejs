@@ -1,0 +1,11 @@
+```{=html}
+<div class="month-listing">
+<% let month = null; %>
+<% for (const item of items) { %>
+<% if (item.date !== month) { month = item.date; %>
+<p class="month-heading"><%= month %></p>
+<% } %>
+<p class="month-entry"><a href="<%- item.path %>"><%= item.title %></a></p>
+<% } %>
+</div>
+```

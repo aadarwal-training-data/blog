@@ -58,3 +58,13 @@ blockquote {
 .quarto-title-meta {
   display: none;
 }
+
+// Blog index: posts grouped under month headings.
+.month-listing .month-heading {
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.month-listing .month-entry {
+  margin: 0 0 0.25rem;
+}
