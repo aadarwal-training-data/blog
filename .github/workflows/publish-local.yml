@@ -1,7 +1,10 @@
-# Temporary: deploy from a self-hosted runner while GitHub-hosted runners are delayed.
+# Temporary: deploy from the self-hosted runner on mini-1 (~/actions-runner-blog) while
+# GitHub-hosted runners are delayed. Delete this file and that runner once they recover.
 name: publish (self-hosted)
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
