@@ -54,9 +54,9 @@ blockquote {
   padding: 0.25em 0;
 }
 
-// No author/date block under post titles; dates still show in the listing.
-.quarto-title-meta {
-  display: none;
+// No date block under post titles (Quarto's own rule is this specific).
+#title-block-header.quarto-title-block.default .quarto-title-meta {
+  display: none !important;
 }
 
 // Blog index: posts grouped under month headings.
