@@ -4,7 +4,7 @@ project:
 website:
   title: "Aadarsh Agarwal"
   description: "Technical notes by Aadarsh Agarwal."
-  site-url: https://aadarwal-training-data.github.io/blog/
+  site-url: https://www.aadarwal.com/blog/
   repo-url: https://github.com/aadarwal-training-data/blog
   navbar:
     title: false
@@ -14,3 +14,4 @@ format:
     theme: [default, theme.scss]
     html-math-method: katex
     smooth-scroll: true
+    include-in-header: _redirect.html

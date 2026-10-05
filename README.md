@@ -1,7 +1,8 @@
 # blog
 
 Technical notes by Aadarsh Agarwal, written in [Quarto](https://quarto.org)
-and published at <https://aadarwal-training-data.github.io/blog/>.
+and published at <https://www.aadarwal.com/blog/> (GitHub Pages origin, proxied
+by the `vercel.json` routes in the `aadarshagarwal.com` repo).
 
 ## Write a post
 
