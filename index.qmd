@@ -5,7 +5,7 @@ listing:
   sort: ["date desc", "title"]
   type: custom
   template: listing.ejs
-  date-format: "MMMM YYYY"
+  date-format: "YYYY"
   categories: false
   sort-ui: false
   filter-ui: false
