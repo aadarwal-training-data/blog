@@ -1,5 +1,5 @@
 ---
-title: "Context blowup in open source models"
+title: "Dealing with Context Blowup in Open Source Models"
 date: 2026-10-05
 ---
 
