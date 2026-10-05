@@ -53,3 +53,8 @@ blockquote {
   overflow-y: hidden;
   padding: 0.25em 0;
 }
+
+// No author/date block under post titles; dates still show in the listing.
+.quarto-title-meta {
+  display: none;
+}

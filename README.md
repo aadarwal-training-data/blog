@@ -5,17 +5,14 @@ and published at <https://aadarwal-training-data.github.io/blog/>.
 
 ## Write a post
 
-Create `posts/<slug>/index.qmd`:
-
-```yaml
----
-title: "Title"
-description: "One line for the listing."
-date: 2026-10-05
----
+```bash
+cp -r posts/_template posts/<slug>
 ```
 
-Push to `main`. GitHub Actions renders the site and deploys it to GitHub Pages.
+Edit `posts/<slug>/index.qmd`, then delete its `draft: true` line to publish.
+Push to `main`; GitHub Actions renders the site and deploys it to GitHub Pages.
+Also add the post to the `#blog` list on www.aadarwal.com (`index.html` in the
+`aadarshagarwal.com` repo).
 
 ## Preview locally
 

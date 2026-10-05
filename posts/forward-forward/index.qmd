@@ -1,177 +1,150 @@
 ---
 title: "Learning without a backward pass"
-subtitle: "Hinton's Forward-Forward algorithm, and why its energy argument is really about hardware"
-description: "What Forward-Forward computes, what it costs on a GPU, and why the case for it lives in physical hardware."
 date: 2026-10-05
 bibliography: references.bib
 ---
 
-Backpropagation trains essentially every neural network, and on a GPU it is very hard to beat. In late 2022 Geoffrey Hinton proposed an alternative, the Forward-Forward algorithm (FF), which replaces backprop's forward and backward passes with two forward passes [@hinton2022forward]. Part of his motivation is energy.
+Notes on @hinton2022forward.
 
-This post works through the paper to pin down what the energy claim actually is. The short version:
+## Forward-Forward
 
-- **FF does not save arithmetic.** On a digital chip it costs at least as much per example as backprop, and it needs more epochs.
-- **What FF removes is a requirement.** Backprop needs an exact, differentiable model of the forward computation. FF only needs each layer to see its own input and output.
-- **That requirement is cheap on a GPU and expensive on physical hardware.** On a GPU the forward computation is exact by construction. On analog or optical hardware the forward pass is cheap, but nobody knows its exact derivatives.
-
-Hinton says much the same. FF "is unlikely to replace backpropagation for applications where power is not an issue," and the two places it may win are "as a model of learning in cortex and as a way of making use of very low-power analog hardware" [@hinton2022forward, §1].
-
-## The algorithm
-
-Each layer of an FF network has its own objective. Real ("positive") data and fake ("negative") data go through the network in two separate forward passes, and every layer learns to give positive data high *goodness* and negative data low goodness. In most of the paper goodness is the sum of squared activities, and each layer estimates the probability that its input is real as
+Layer input $x$ (previous layer's activities), normalized by length only:
 
 $$
-G = \sum_j y_j^2, \qquad p(\text{positive}) = \sigma(G - \theta),
+\hat x = \frac{x}{\lVert x \rVert}, \qquad y = \mathrm{ReLU}(W \hat x)
 $$
 
-where the $y_j$ are the layer's ReLU activities and $\theta$ is a threshold.^[The opposite sign also works: low goodness for real data. On CIFAR-10 it does slightly better.]
+Goodness, and probability that the input is positive (real) data:
 
-Two details make a purely layer-local objective work.
+$$
+G = \sum_j y_j^2, \qquad p = \sigma(G - \theta)
+$$
 
-**Normalize between layers.** If layer 2 saw layer 1's raw activities, it could separate positive from negative data by reading off the length $\lVert y \rVert$, which layer 1 has just trained to be informative, and it would learn nothing new. So FF divides each activity vector by its length before passing it on. The length sets this layer's goodness; only the direction goes up.^[Hinton uses the simplest form of layer normalization, which does not subtract the mean.]
+Local loss:
 
-**Make negative data.** For supervised learning, put the label in the input: overwrite the first 10 pixels of an MNIST image with a one-hot label. Positive data is an image with its correct label; negative data is the same image with a wrong one. For unsupervised learning, Hinton builds hybrid images by combining two different digits through a blurry random mask, which keeps short-range correlations realistic and makes long-range ones wrong. The long-term hope is that the network generates its own negatives.
+$$
+\mathcal{L} =
+\begin{cases}
+-\log p & \text{(positive)}\\
+-\log(1 - p) & \text{(negative)}
+\end{cases}
+$$
 
-### The update is local
-
-Take one layer with length-normalized input $\hat x$, weights $W$, and activities $y = \mathrm{ReLU}(W\hat x)$. Its loss is $-\log p$ on positive data and $-\log(1-p)$ on negative data. Because $\partial G/\partial (W\hat x)_j = 2y_j$ (the ReLU passes gradient exactly where $y_j > 0$), gradient descent with learning rate $\eta$ gives
+Update, using $\partial G / \partial W = 2\, y\, \hat x^{\top}$:
 
 $$
 \Delta W =
 \begin{cases}
-+\,2\eta\,(1-p)\; y\,\hat x^{\top} & \text{(positive data)}\\[2pt]
--\,2\eta\,p\; y\,\hat x^{\top} & \text{(negative data)}
++2\eta\,(1-p)\; y\, \hat x^{\top} & \text{(positive)}\\
+-2\eta\, p\; y\, \hat x^{\top} & \text{(negative)}
 \end{cases}
 $$
 
-This is the paper's equation 3, in matrix form and for both phases. It is a Hebbian outer product $y\hat x^{\top}$ on real data and an anti-Hebbian one on negative data, each scaled by a single number that says how wrong the layer currently is. Everything it needs is at the layer: its input, its output, and one scalar per example.
+Inputs to the update: $\hat x$, $y$, $p$, all local to the layer.
 
-Compare backprop. Its error signal at layer $\ell$ is
+Negative data:
+
+- supervised: one-hot label in the first 10 pixels; correct label = positive, wrong label = negative
+- unsupervised: $m \odot x_1 + (1 - m) \odot x_2$, with $m$ a random bit image blurred by $[\tfrac14, \tfrac12, \tfrac14]$ and thresholded at 0.5
+
+Classification (supervised), one pass per label $c$:
 
 $$
-\delta_\ell = \big(W_{\ell+1}^{\top}\,\delta_{\ell+1}\big) \odot f'(a_\ell),
+\hat c = \arg\max_c \sum_{\ell \ge 2} G_\ell(x, c)
 $$
 
-which needs the transposed weights of every layer above, the derivative of every nonlinearity from this layer up, and activations saved from the forward pass. FF's whole learning rule fits in a few lines:
+## Backprop
 
-```python
-import numpy as np
+$$
+\delta_\ell = \big(W_{\ell+1}^{\top}\, \delta_{\ell+1}\big) \odot f'(a_\ell), \qquad \Delta W_\ell = -\eta\, \delta_\ell\, h_{\ell-1}^{\top}
+$$
 
-def ff_layer_step(W, x_pos, x_neg, theta, lr):
-    """One Forward-Forward update for a ReLU layer y = relu(W x).
-    x_pos, x_neg: (batch, d_in) inputs, already length-normalized."""
-    def forward(x):
-        y = np.maximum(x @ W.T, 0.0)                      # activities
-        p = 1 / (1 + np.exp(-((y**2).sum(1) - theta)))   # p(positive)
-        return y, p
+Inputs to the update: $W_{\ell+1}, \dots, W_L$, $f'$ at every layer from $\ell$ up, stored $a_\ell$ and $h_{\ell-1}$.
 
-    y_pos, p_pos = forward(x_pos)
-    y_neg, p_neg = forward(x_neg)
-    # Hebbian on positive data, anti-Hebbian on negative data,
-    # each scaled by how wrong the layer currently is.
-    dW = 2 * ((1 - p_pos)[:, None] * y_pos).T @ x_pos \
-       - 2 * (p_neg[:, None] * y_neg).T @ x_neg
-    W = W + lr * dW / len(x_pos)
+Physical layers $h_{\ell+1} = f_\ell(h_\ell; \theta_\ell)$:
 
-    unit = lambda y: y / (np.linalg.norm(y, axis=1, keepdims=True) + 1e-8)
-    return W, unit(y_pos), unit(y_neg)   # inputs to the next layer
-```
+$$
+\nabla_{\theta_\ell} L = J_{\theta_\ell}^{\top}\, J_{\ell+1}^{\top} \cdots J_{L}^{\top}\, \nabla_{h_{L+1}} L,
+\qquad J_k = \frac{\partial f_k}{\partial h_k}, \quad J_{\theta_\ell} = \frac{\partial f_\ell}{\partial \theta_\ell}
+$$
 
-To train a stack, feed each layer's normalized outputs into the next. Nothing ever flows down.^[`dW` is exactly the negative gradient of the layer's logistic loss; a finite-difference check agrees to about $10^{-10}$.]
+Each $J_k$ is a derivative of the physical device at its operating point.
 
-### How well it works
+## Cost per example, digital
 
-The experiments are small, networks with "a few million connections," and Hinton leaves scaling to a later paper.
+$F$ = arithmetic of one forward pass, $L$ = number of layers.
 
-| Task | Backprop | Forward-Forward |
+| | arithmetic | activations held |
 |---|---|---|
-| MNIST, fully connected, permutation-invariant | ≈1.4% test error in ≈20 epochs | 1.36% after 60 epochs (supervised, 4 × 2000 ReLUs) |
-| MNIST, unsupervised features + linear classifier | — | 1.37% (100 epochs); 1.16% with local receptive fields (60 epochs) |
-| MNIST with up to 2-pixel jitter | ≈0.6% (a typical CNN) | 0.64% after 500 epochs |
-| CIFAR-10, local receptive fields, 2 / 3 hidden layers | 37% / 39% | 41% / 41% (best variant) |
+| backprop | $3F$ | $L$ layers |
+| backprop + checkpointing [@chen2016training] | $\approx 4F$ | $O(\sqrt{L})$ layers |
+| FF | $4F$ ($5F$ with hard-negative mining) | 1 layer |
 
-: Test error rates reported in @hinton2022forward, §3–4.
+MNIST [@hinton2022forward, §3]: backprop ≈ 20 epochs, FF 60 epochs, so FF ≈ 4–5× the arithmetic.
 
-FF gets close on these problems, but it learns more slowly: 60 epochs against about 20 on MNIST, and on CIFAR-10 "backpropagation reduces the training error much more quickly" (training error of 0–2% for backprop against 20–33% for FF). Classification also costs more. The best FF classifier runs the network once per candidate label and picks the label with the highest goodness, so MNIST takes ten passes per test image. A single-pass readout exists but is worse.
+45 nm energies [@horowitz2014computing]: FP32 multiply 3.7 pJ, FP32 add 0.9 pJ, DRAM access 1.3–2.6 nJ.
 
-## On a digital chip
-
-Let $F$ be the arithmetic of one forward pass. Per training example:
-
-- **Backprop** does the forward pass ($F$), then propagates errors downward ($\approx F$ for the $W^{\top}\delta$ products) and forms weight gradients ($\approx F$ for the $\delta x^{\top}$ products), about $3F$ in total. It has to keep each layer's activations from the forward pass until the backward pass reaches that layer.
-- **FF** runs two forward passes, positive and negative, each followed by a local weight gradient, about $4F$ in total (or $5F$ counting the extra pass Hinton uses to pick hard negative labels). It needs only one layer's activations at a time.
-
-FF also needs about three times as many epochs on MNIST, so reaching about 1.4% test error takes roughly four to five times the arithmetic of backprop. That is a back-of-envelope estimate, but no reasonable accounting puts FF ahead.
-
-Memory is FF's real advantage on digital hardware, and memory matters because moving data costs far more energy than computing on it. At 45 nm, a 32-bit floating-point multiply costs 3.7 pJ and a DRAM access 1.3–2.6 nJ, several hundred times more [@horowitz2014computing]. Two things blunt the advantage.
-
-1. **Arithmetic grows faster than stored activations.** A layer of width $d$ does about $3d^2$ multiply-adds per example under backprop but stashes only $d$ activations, so each stashed value is amortized over about $3d$ multiply-adds. Even if every stashed activation makes a round trip to DRAM, that adds only about $93/d$ to the layer's energy, under 10% for $d = 1000$.^[Using the 32-bit figures tabulated by @han2016eie: 640 pJ per DRAM access and $3.7 + 0.9 = 4.6$ pJ per floating-point multiply-add, so $2 \times 640 / (3d \times 4.6) \approx 93/d$.] Real networks stash many more intermediate tensors per layer than this toy MLP, which is why the second point is standard practice.
-2. **Backprop can buy most of the same savings.** Gradient checkpointing keeps only $O(\sqrt{L})$ of the $L$ layers' activations and recomputes the rest, at the cost of about one extra forward pass [@chen2016training]. That brings backprop to about $4F$ per example, the same as FF, and backprop keeps its accuracy and its faster convergence.
-
-FF has one more structural advantage. In the terms of @jaderberg2017decoupled, it removes update locking and backward locking: a layer can update as soon as its own forward computation finishes. A pipeline of chips could then learn from streaming data without stashing activations or sending gradients backward through it. That is a real systems property, but nobody has shown that it pays off at scale.
-
-Direct energy measurements are scarce, and the clearest one points the same way. On an embedded GPU, an 8-bit FF variant trained ResNet-18 on CIFAR-10 with 3.5% less energy than 8-bit backprop (9,926 J against 10,291 J), while moving backprop from 32-bit to 8-bit arithmetic saved 45% [@ma2025ffint8].^[That variant is not purely local: its loss also passes some gradient information from later layers back to earlier ones.]
-
-So on the hardware we train on today there is no clear energy case for FF. When the weights live in DRAM and every multiply is exact, the backward pass is just more of the same arithmetic, and backprop spends it more efficiently.
-
-## On physical hardware
-
-A physical neural network lets physics do the multiply-accumulate. In a resistive crossbar the inputs are voltages $V_j$ on the columns and the weights are conductances $G_{ij}$; Ohm's law and Kirchhoff's current law then produce the output currents $I_i = \sum_j G_{ij} V_j$. That is a whole matrix-vector product in one step, and the weights never move. In Hinton's words the products "are charges which add themselves," which "seems a lot more sensible than driving transistors at high power to model the individual bits in the digital representation of a number and then performing $O(n^2)$ single bit operations to multiply two $n$-bit numbers together" [@hinton2022forward, §8]. Optical hardware does the same job with interference and propagation, and can be extraordinarily frugal: one optical network classified handwritten digits at about 90% accuracy using fewer than one detected photon per multiplication [@wang2022optical].^[That figure counts optical energy only, and only for inference; the network was trained digitally.]
-
-The trouble is the backward pass. For a stack of physical layers $h_{\ell+1} = f_\ell(h_\ell;\theta_\ell)$, backprop's gradient is a product of Jacobians,
+Activation stash vs. arithmetic for a layer of width $d$, at 640 pJ per 32-bit DRAM access [@han2016eie]:
 
 $$
-\frac{\partial L}{\partial \theta_\ell}
-= \Big(\frac{\partial f_\ell}{\partial \theta_\ell}\Big)^{\!\top}
-  \Big(\frac{\partial f_{\ell+1}}{\partial h_{\ell+1}}\Big)^{\!\top}
-  \cdots
-  \Big(\frac{\partial f_{L}}{\partial h_{L}}\Big)^{\!\top}
-  \frac{\partial L}{\partial h_{L+1}},
+\frac{E_{\text{stash}}}{E_{\text{arith}}} \approx \frac{2 \times 640\ \text{pJ}}{3d \times 4.6\ \text{pJ}} \approx \frac{93}{d}
 $$
 
-and every factor is the derivative of a physical process at its actual operating point. Real devices are noisy, they drift, they differ from one copy to the next, and their nonlinearities are never characterized exactly. That leaves four options.
+Measured, ResNet-18 on CIFAR-10, Jetson Orin Nano [@ma2025ffint8]:
 
-1. **Model the hardware.** Physics-aware training runs the forward pass on the physical system and the backward pass through a digital model of it [@wright2022deep]. It works, but you need the model, and you pay for a digital backward pass.
-2. **Run the backward pass physically.** A resistive crossbar can multiply by $W^{\top}$ by driving its columns instead of its rows [@gokmen2016acceleration], and in situ backpropagation in photonics sends light backward through the same device and reads the gradient out of interference measurements [@hughes2018training; @pai2023experimentally]. Both are elegant, but the forward activations still have to be recorded for the update, and the nonlinearities often have to be handled digitally, as in Pai et al.
-3. **Perturb.** Weight perturbation jiggles the parameters and correlates the jiggles with changes in the loss [@jabri1992weight]. It needs no model, but it is noisy: the learning rate has to shrink in proportion to the number of variables being perturbed, so it "scales badly" [@hinton2022forward, §1].
-4. **Digitize.** Read each layer's outputs through analog-to-digital converters and compute the gradients digitally. This is what people have resorted to [@hinton2022forward, §8], and converters are expensive: in ISAAC, an analog crossbar accelerator, the ADCs take 58% of each tile's power [@shafiee2016isaac].
+| training | energy |
+|---|---|
+| FP32 backprop | 18,764 J |
+| INT8 backprop | 10,291 J |
+| INT8 FF (loss not purely local) | 9,926 J |
 
-FF changes what the hardware has to provide.
+## Physical hardware
 
-- **Only forward passes.** The physical system only ever does what it is good at.
-- **No downstream Jacobians.** A layer's update depends on its own input, its own output and one scalar. If an unknown physical transformation sits between two trained layers, FF does not need to know what it is: "Unlike backpropagation, FF has no problem learning if we insert a black box between layers that are being trained by FF" [@hinton2022forward, §7].
-- **The update has the right shape.** An outer product scaled by one number is the kind of update a crossbar can apply to all of its weights at once, in place: each device nudges its conductance when pulses on its row and its column coincide [@gokmen2016acceleration].
-- **Goodness can be a physical quantity.** If a layer's activities are optical field amplitudes, $\sum_j |E_j|^2$ is the total optical power (up to a constant), which a photodetector measures directly.
-- **No stored activations and no reverse path.** Hinton argues that "the use of two forward passes instead of a forward and a backward pass should make these A-to-D converters unnecessary" [@hinton2022forward, §8].
+Resistive crossbar [@gokmen2016acceleration]:
 
-### Mortal computation
+- forward: $I_i = \sum_j G_{ij} V_j$
+- backward: drive the columns to multiply by $W^{\top}$
+- update: $\Delta G_{ij} \propto x_i\, \delta_j$ by pulse coincidence, all devices in parallel
 
-The paper's last argument goes furthest. Digital computers are engineered so that the same program, or the same set of weights, behaves identically on every copy of the hardware. That makes knowledge immortal, and the price is paid in energy: transistors driven hard enough to behave as exact bits. Hinton proposes giving that up. Let every chip differ in unknown ways, let learning find weights that exploit the quirks of that particular chip, and accept that the weights die with the hardware. Knowledge then moves between chips by distillation, training the new chip to reproduce the old one's output probabilities, rather than by copying weights [@hinton2022forward, §9]:
+FF update in the same rank-1 form: $\Delta W = s\, y\, \hat x^{\top}$, $s \in \{\, 2\eta(1-p),\ -2\eta p \,\}$.
 
-> If you want your trillion parameter neural net to only consume a few watts, mortal computation may be the only option. Its feasibility rests on finding a learning procedure that can run efficiently in hardware whose precise details are unknown, and the Forward-Forward algorithm is a promising candidate, though it remains to be seen how well it scales to large neural networks.
+Optical goodness: $G = \sum_j |E_j|^2 \propto$ total optical power.
 
-For scale, a human brain runs on roughly 20 W [@balasubramanian2021brain].
+Ways to get gradients on physical hardware:
 
-Experiments since the paper have started testing this on real physics. @oguz2023forward used FF to train a network built around nonlinear pulse propagation in a multimode optical fiber, a fixed transform that the training never had to model. On a 5,000-image MNIST subset, swapping one digital layer for the fiber raised test accuracy from 90.8% to 94.4%, close to the 95.0% of LeNet-5 trained with backprop. @momeni2023backpropagation trained deep physical networks with an FF-inspired local rule, physical local learning, that needs no model of the nonlinear physical layers. They demonstrated it on vowel classification in acoustic and microwave experiments and on a modeled optical system. It is a hybrid: some parameter updates are still computed digitally.
+| method | requires |
+|---|---|
+| physics-aware training [@wright2022deep] | digital model of the device for the backward pass |
+| in situ backprop [@hughes2018training; @pai2023experimentally] | reciprocal device, forward + adjoint field measurements, digital nonlinearities |
+| weight perturbation [@jabri1992weight] | no model; learning rate $\propto 1/(\text{number of perturbed variables})$ |
+| ADCs + digital gradients | ADCs: 58% of tile power in ISAAC [@shafiee2016isaac] |
+| equilibrium propagation [@scellier2017equilibrium] | energy-based system; free phase + weakly clamped phase |
+| FF | $\hat x$, $y$, $p$ per layer |
 
-## What FF does not fix
+Reference points: optical MNIST inference at ≈ 90% accuracy with < 1 detected photon per multiplication [@wang2022optical]; human brain ≈ 20 W [@balasubramanian2021brain].
 
-- **Negative data is not free.** It costs a second pass per example, and it has to come from somewhere. Whether a network can generate good enough negatives for itself is the first open question on Hinton's list.
-- **Normalization has to be physical too.** Dividing each activity vector by its length is a divisive gain control, and someone has to build it.
-- **Writing weights is hard.** Gokmen and Vlasov estimate that training on a crossbar needs devices with about 1,000 conductance levels whose up and down steps match to within about 5% [@gokmen2016acceleration]. Those requirements come from applying many small updates accurately, which FF still has to do. Its update also needs every element of $y$ and $\hat x$ at the array, so some per-element signal conversion remains; whether that can avoid ADCs is an engineering question.
-- **Each layer still needs its own derivative.** The update above assumes the layer computes $\mathrm{ReLU}(W\hat x)$. If the trainable parameters act through unknown physics, a layer needs a local model or local perturbation. That is far cheaper than a global one, since each objective involves only one layer's parameters [@hinton2022forward, footnote 3; @ren2023scaling], but it is not free.
-- **Accuracy and scale are open.** In the paper FF trails backprop on CIFAR-10 and converges more slowly. Later variants have narrowed the gap on CIFAR-10, to about 84% against 89% for backprop on the same network (with a little backprop allowed inside pairs of layers), but it reopens on CIFAR-100, at 36% against 60% [@dooms2024trifecta].
-- **It has competitors for the same niche.** Equilibrium propagation lets an energy-based system settle twice, once freely and once with its outputs weakly nudged toward the target, and updates each weight from the activities of the two units it connects in the two phases [@scellier2017equilibrium]. Physics-aware training and in situ backprop are the options above. FF is one point in this design space, not the answer.
+## Results
 
-## Summary
+Test error, @hinton2022forward §3–4:
 
-| | Digital (GPU, TPU) | Physical (analog, optical) |
+| task | backprop | FF |
 |---|---|---|
-| Forward pass | exact; costs $F$ | cheap; inexact and device-specific |
-| What backprop's backward pass needs | $\approx 2F$ more arithmetic, plus stored activations | an exact model of the hardware, a physical reverse path, or ADCs plus digital gradients |
-| What FF removes | the backward pass, at the price of a second forward pass | the model, the reverse path, and the per-layer gradient readout |
-| Energy case for FF | weak: more arithmetic and more epochs, and checkpointing gives backprop most of the memory savings | plausible and possibly large, but unproven at scale |
+| MNIST, fully connected, permutation-invariant | ≈ 1.4% (≈ 20 epochs) | 1.36% (60 epochs, 4 × 2000 ReLUs) |
+| MNIST, unsupervised + linear classifier | — | 1.37% (100 epochs); 1.16% local receptive fields (60 epochs) |
+| MNIST, ±2-pixel jitter | ≈ 0.6% (CNN) | 0.64% (500 epochs) |
+| CIFAR-10, local receptive fields, 2 / 3 layers | 37% / 39% | 41% / 41% |
 
-So is learning without backprop more energy efficient? Not on the hardware we train on today. The interesting claim is conditional: if physics does the forward pass, backprop's need for an exact, differentiable model of that physics becomes the dominant cost, and FF removes it.
+Since:
 
-That claim is testable. The natural first experiment is a simulation: give the forward pass fixed, unknown device variations, then compare backprop with a nominal model, backprop with a perfect model, and FF as the mismatch grows.
+| work | result |
+|---|---|
+| @oguz2023forward | multimode fiber as a fixed layer, MNIST subset: FF 90.8% → 94.4% accuracy with the fiber; LeNet-5 backprop 95.0% |
+| @momeni2023backpropagation | model-free FF-style local learning on acoustic and microwave hardware and a modeled optical system; vowel classification |
+| @dooms2024trifecta | CIFAR-10 ≈ 84% (backprop 89%); CIFAR-100 36% (backprop 60%) |
+
+## Claims in the paper
+
+- §1: FF "is unlikely to replace backpropagation for applications where power is not an issue."
+- §7: "FF has no problem learning if we insert a black box between layers that are being trained by FF."
+- §8: "The use of two forward passes instead of a forward and a backward pass should make these A-to-D converters unnecessary."
+- §9: "If you want your trillion parameter neural net to only consume a few watts, mortal computation may be the only option."

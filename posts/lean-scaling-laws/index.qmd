@@ -1,0 +1,7 @@
+---
+title: "Lean scaling laws"
+date: 2026-10-05
+bibliography: references.bib
+nocite: |
+  @gwern2025lean, @carbonara_type
+---

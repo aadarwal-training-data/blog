@@ -7,10 +7,7 @@ website:
   site-url: https://aadarwal-training-data.github.io/blog/
   repo-url: https://github.com/aadarwal-training-data/blog
   navbar:
-    title: "blog"
-    right:
-      - text: "aadarwal.com"
-        href: https://www.aadarwal.com
+    title: false
 
 format:
   html:

@@ -1,0 +1,15 @@
+---
+title: "Title"
+date: YYYY-MM-DD
+draft: true  # delete this line to publish
+# bibliography: references.bib
+---
+
+<!--
+New post: cp -r posts/_template posts/<slug>, then edit this file.
+
+Math: $x$ inline, $$x$$ display (KaTeX).
+Footnotes ^[like this] render as margin notes.
+Citations [@key] need `bibliography: references.bib` and a references.bib next to this file.
+Executable code: ```{python}; render locally and commit _freeze/.
+-->
