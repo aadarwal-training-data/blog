@@ -1,0 +1,38 @@
+# Temporary: deploy from a self-hosted runner while GitHub-hosted runners are delayed.
+name: publish (self-hosted)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-local
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: [self-hosted, blog-local]
+    steps:
+      - uses: actions/checkout@v7
+      - run: quarto render
+      - run: tar -cvf "$RUNNER_TEMP/artifact.tar" -C _site --exclude=.git --exclude=.github .
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    runs-on: [self-hosted, blog-local]
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
