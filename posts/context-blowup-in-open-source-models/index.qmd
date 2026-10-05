@@ -1,0 +1,6 @@
+---
+title: "Context blowup in open source models"
+date: 2026-10-05
+---
+
+Cross-listed with the [nonlocally blog](https://blog.nonlocally.org/context-blowup-in-open-source-models/).
