@@ -39,8 +39,8 @@ Take one layer with length-normalized input $\hat x$, weights $W$, and activitie
 $$
 \Delta W =
 \begin{cases}
-+\,2\eta\,(1-p)\; y\,\hat x^{\top} & \text{on positive data,}\\[2pt]
--\,2\eta\,p\; y\,\hat x^{\top} & \text{on negative data.}
++\,2\eta\,(1-p)\; y\,\hat x^{\top} & \text{(positive data)}\\[2pt]
+-\,2\eta\,p\; y\,\hat x^{\top} & \text{(negative data)}
 \end{cases}
 $$
 
@@ -74,7 +74,7 @@ def ff_layer_step(W, x_pos, x_neg, theta, lr):
     W = W + lr * dW / len(x_pos)
 
     unit = lambda y: y / (np.linalg.norm(y, axis=1, keepdims=True) + 1e-8)
-    return W, unit(y_pos), unit(y_neg)   # normalized outputs feed the next layer
+    return W, unit(y_pos), unit(y_neg)   # inputs to the next layer
 ```
 
 To train a stack, feed each layer's normalized outputs into the next. Nothing ever flows down.^[`dW` is exactly the negative gradient of the layer's logistic loss; a finite-difference check agrees to about $10^{-10}$.]

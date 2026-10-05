@@ -46,3 +46,10 @@ blockquote {
   color: #333;
   border-left-color: $border-color;
 }
+
+// Wide equations scroll inside their own box instead of widening the page.
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}
