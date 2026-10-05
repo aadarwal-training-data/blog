@@ -34,5 +34,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # A delayed run must not overwrite a newer deploy: deploy only the current main.
+      - id: current
+        run: |
+          head=$(git ls-remote "${{ github.server_url }}/${{ github.repository }}" refs/heads/main | cut -f1)
+          echo "current=$([ "$head" = "$GITHUB_SHA" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - id: deployment
+        if: steps.current.outputs.current == 'true'
         uses: actions/deploy-pages@v5
